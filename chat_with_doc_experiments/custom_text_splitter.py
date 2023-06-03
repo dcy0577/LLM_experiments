@@ -606,6 +606,7 @@ class RecursiveCharacterTextSplitter(TextSplitter):
         elif language == Language.MARKDOWN:
             return [
                 # First, try to split along Markdown headings (starting with level 2)
+                "# ",
                 "\n## ",
                 "\n### ",
                 "\n#### ",

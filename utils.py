@@ -105,7 +105,8 @@ def html2makrdown(input_path_list: List[str], output_folder_path: str):
 
 if __name__ == "__main__":
     # for data preprocessing, create decent md files from cleaned html files
-    input_path_list = getFileList('./data', [], ext="htm")
+    htm_folder_path = "/mnt/c/Users/ge25yak/Documents/My RoboHelp Projects/outputs/Vectorworks_Help/test/VW2023_Guide"
+    input_path_list = getFileList(htm_folder_path, [], ext="htm")
     cleaned_html_list = clean_html(input_path_list, './data_cleaned')
     html2makrdown(cleaned_html_list, './data_markdown')
 

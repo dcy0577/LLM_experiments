@@ -20,7 +20,7 @@ dotenv.load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Embeddings
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embeddings = HuggingFaceEmbeddings(model_name="all-mpnet-base-v2")
 
 persist_directory = './db'
 with os.scandir(persist_directory) as it:
@@ -29,9 +29,9 @@ with os.scandir(persist_directory) as it:
         db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
     else:
         documents = []
-        for file in os.listdir('./data'):
+        for file in os.listdir('./data_markdown'):
             if file.endswith('.md'):
-                md_path = os.path.join('./data', file)
+                md_path = os.path.join('./data_markdown', file)
                 loader = UnstructuredMarkdownLoader(md_path)
                 documents.extend(loader.load())
             # elif file.endswith('.pdf'):
@@ -45,7 +45,7 @@ with os.scandir(persist_directory) as it:
 
         # Text Splitter
         # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        # text_splitter = RecursiveCharacterTextSplitter.from_language(language=Language.MARKDOWN, chunk_size=2000, chunk_overlap=0)
+        text_splitter = RecursiveCharacterTextSplitter.from_language(language=Language.MARKDOWN, chunk_size=2000, chunk_overlap=0)
         # # text_splitter = NLTKTextSplitter(chunk_size=1000)
         # # text_splitter = CharacterTextSplitter.from_tiktoken_encoder(chunk_size=1000, chunk_overlap=20)
         # docs = text_splitter.split_documents(documents)
@@ -72,9 +72,8 @@ with os.scandir(persist_directory) as it:
 # )
 
 tech_template = """
-Given the following extracted parts of a long document and a question, create a final answer with references ("SOURCES"). 
+Given the following extracted parts of a markdown format documentation and a question, create a final answer with references ("SOURCES"). 
 ALWAYS return a "SOURCES" part in your answer.
-If the user's question requires you to provide specific information from the document, give your answer based only on the extracted contents. DON'T generate an answer that is NOT written in the provided document.
 If you don't find the answer to the user's question with the contents provided to you, answer that you didn't find the answer in the contents and propose him to rephrase his query with more details.
 If you are asked to provide code example, please provide at least one code snippet according to the given document.
 If needed, provide your answer in bullet points.
@@ -109,7 +108,7 @@ def answer_query(query, chat_history):
                                            verbose=True, 
                                            prompt=NEW_PROMPT,
                                            document_variable_name = "context")
-    chain = ConversationalRetrievalChain(retriever=db.as_retriever(search_kwargs={"k": 1}), 
+    chain = ConversationalRetrievalChain(retriever=db.as_retriever(search_kwargs={"k": 2}), 
                                          question_generator=question_generator, 
                                          combine_docs_chain=doc_chain, 
                                          verbose =True)
