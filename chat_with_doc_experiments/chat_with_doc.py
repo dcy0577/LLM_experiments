@@ -3,13 +3,6 @@ import openai
 from langchain.llms import OpenAI
 import dotenv
 import os
-import requests
-from bs4 import BeautifulSoup
-from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import urlopen
-from langchain.document_loaders import WebBaseLoader
-from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQAWithSourcesChain, RetrievalQA, ConversationalRetrievalChain, LLMChain
 from langchain.chains.qa_with_sources import load_qa_with_sources_chain
@@ -17,41 +10,55 @@ from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_
 from langchain.chat_models import ChatOpenAI
 import textwrap
 from langchain.chains.api import open_meteo_docs
+from langchain.vectorstores import Chroma
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.document_loaders import TextLoader
+from langchain.document_loaders import PyPDFLoader, UnstructuredPDFLoader, MathpixPDFLoader, PyPDFDirectoryLoader, UnstructuredMarkdownLoader, UnstructuredHTMLLoader
+from custom_text_splitter import CharacterTextSplitter, RecursiveCharacterTextSplitter, Language, SpacyTextSplitter, NLTKTextSplitter, MarkdownTextSplitter
 
 dotenv.load_dotenv()
-
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def wrap_text_preserve_newlines(text, width=110):
-    # Split the input text into lines based on newline characters
-    lines = text.split('\n')
-    # Wrap each line individually
-    wrapped_lines = [textwrap.fill(line, width=width) for line in lines]
-    # Join the wrapped lines back together using newline characters
-    wrapped_text = '\n'.join(wrapped_lines)
-    return wrapped_text
-
-# Document Loader
-from langchain.document_loaders import TextLoader
-from langchain.document_loaders import PyPDFLoader
-
-# loader = TextLoader('./example.txt')
-loader = PyPDFLoader('./data/VectorScriptGuide.pdf')
-documents = loader.load()
-
-# Text Splitter
-from langchain.text_splitter import CharacterTextSplitter, RecursiveCharacterTextSplitter
-# text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
-docs = text_splitter.split_documents(documents)
-
 # Embeddings
-from langchain.embeddings import HuggingFaceEmbeddings
-embeddings = HuggingFaceEmbeddings()
-#Create the vectorized db
-# Vectorstore: https://python.langchain.com/en/latest/modules/indexes/vectorstores.html
-from langchain.vectorstores import FAISS
-db = FAISS.from_documents(docs, embeddings)
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+persist_directory = './db'
+with os.scandir(persist_directory) as it:
+    # load vector db if it exists
+    if any(it):
+        db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+    else:
+        documents = []
+        for file in os.listdir('./data'):
+            if file.endswith('.md'):
+                md_path = os.path.join('./data', file)
+                loader = UnstructuredMarkdownLoader(md_path)
+                documents.extend(loader.load())
+            # elif file.endswith('.pdf'):
+            #     pdf_path = os.path.join('./data', file)
+            #     loader = PyPDFLoader(pdf_path)
+            #     documents.extend(loader.load())
+        # Document Loader
+        # loader = UnstructuredPDFLoader('./data/sub_data/VWKeyboardShortcuts.pdf')
+        # loader = UnstructuredPDFLoader('./data/VectorworksUsersGuide_2023_Sp4.pdf')
+
+
+        # Text Splitter
+        # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        # text_splitter = RecursiveCharacterTextSplitter.from_language(language=Language.MARKDOWN, chunk_size=2000, chunk_overlap=0)
+        # # text_splitter = NLTKTextSplitter(chunk_size=1000)
+        # # text_splitter = CharacterTextSplitter.from_tiktoken_encoder(chunk_size=1000, chunk_overlap=20)
+        # docs = text_splitter.split_documents(documents)
+
+        # no splitting
+        docs = [doc for doc in documents]
+        
+        # Create the vectorized db
+        # Vectorstore: https://python.langchain.com/en/latest/modules/indexes/vectorstores.html
+        db = Chroma.from_documents(documents=docs, 
+                                   embedding=embeddings, 
+                                   persist_directory=persist_directory)
+        db.persist()
 
 # tech_template = """use the following pieces of context to answer the question at the end. If you don't know the answer, 
 # just say that you don't know, don't try to make up an answer. If you are asked to provide example, please provide at least one code snippet according to the given context.
@@ -66,24 +73,22 @@ db = FAISS.from_documents(docs, embeddings)
 
 tech_template = """
 Given the following extracted parts of a long document and a question, create a final answer with references ("SOURCES"). 
-If you don't know the answer, just say that you don't know. Don't try to make up an answer.
 ALWAYS return a "SOURCES" part in your answer.
-If you are asked to provide example, please provide at least one code snippet according to the given context.
+If the user's question requires you to provide specific information from the document, give your answer based only on the extracted contents. DON'T generate an answer that is NOT written in the provided document.
+If you don't find the answer to the user's question with the contents provided to you, answer that you didn't find the answer in the contents and propose him to rephrase his query with more details.
+If you are asked to provide code example, please provide at least one code snippet according to the given document.
+If needed, provide your answer in bullet points.
+If asked an irrelevant question, you will gently guide the conversation back to the topic of the documentation of vectorworks.
+The content are given in markdown format. You should use markdown syntax to understand the content.
 
 Question: {question}
 =========
-{summaries}
+{context}
 =========
 Answer: """
-PROMPT = PromptTemplate(
-    template=tech_template, input_variables=["summaries", "question"]
+NEW_PROMPT = PromptTemplate(
+    template=tech_template, input_variables=["context", "question"]
 )
-
-def get_chat_history(inputs) -> str:
-    res = []
-    for human, ai in inputs:
-        res.append(f"Human:{human}\nAI:{ai}")
-    return "\n".join(res)
 
 chat_history = []
 def answer_query(query, chat_history):
@@ -100,17 +105,27 @@ def answer_query(query, chat_history):
     # return print(result["result"])
 
     question_generator = LLMChain(llm=chat, verbose=True, prompt=CONDENSE_QUESTION_PROMPT)
-    doc_chain = load_qa_with_sources_chain(chat, chain_type="stuff", verbose=True, prompt=PROMPT)
-    chain = ConversationalRetrievalChain(retriever=db.as_retriever(search_type="mmr",search_kwargs={"k": 3}),question_generator=question_generator, combine_docs_chain=doc_chain, verbose =True)
+    doc_chain = load_qa_with_sources_chain(chat, chain_type="stuff", 
+                                           verbose=True, 
+                                           prompt=NEW_PROMPT,
+                                           document_variable_name = "context")
+    chain = ConversationalRetrievalChain(retriever=db.as_retriever(search_kwargs={"k": 1}), 
+                                         question_generator=question_generator, 
+                                         combine_docs_chain=doc_chain, 
+                                         verbose =True)
     result = chain({"question": query, "chat_history": chat_history})
     return result
+
 while True:
     
     user_input = input("Ask a question: ")
     result = answer_query(user_input, chat_history)
     print(result["answer"])
     chat_history.append((user_input, result["answer"]))
-    print(chat_history)
+    # only keep the last 5 history
+    if len(chat_history) > 5:
+        chat_history.pop(0)
+    # print(chat_history)
 
 
 
