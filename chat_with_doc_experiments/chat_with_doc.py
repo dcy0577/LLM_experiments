@@ -45,7 +45,7 @@ with os.scandir(persist_directory) as it:
 
         # Text Splitter
         # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        text_splitter = RecursiveCharacterTextSplitter.from_language(language=Language.MARKDOWN, chunk_size=2000, chunk_overlap=0)
+        # text_splitter = RecursiveCharacterTextSplitter.from_language(language=Language.MARKDOWN, chunk_size=2000, chunk_overlap=0)
         # # text_splitter = NLTKTextSplitter(chunk_size=1000)
         # # text_splitter = CharacterTextSplitter.from_tiktoken_encoder(chunk_size=1000, chunk_overlap=20)
         # docs = text_splitter.split_documents(documents)
