@@ -1,6 +1,7 @@
 import os
 import uuid
 from transformers.tools import OpenAiAgent
+from transformers.tools.agents import PreTool
 import dotenv
 from transformers import Tool
 
@@ -76,11 +77,28 @@ def run_custom_tool(query: str):
         api_key=os.getenv("OPENAI_API_KEY"),
         additional_tools=[create_wall_tool, update_wall_tool, retrieve_tool, delete_tool]
     )
-    agent.run(query)
+
+    # delete pretools to optimize performance
+    del_pretools(agent)
+
+    agent.run(query) # return_code=True
+
+
+def del_pretools(agent):
+    del_list = []
+    for name, tool in agent.toolbox.items():
+        if type(tool) is PreTool:
+            del_list.append(name)
+    # pop the tools identified
+    for name in del_list:
+        del agent.toolbox[name]
+    # now lets see how much added text will be added to our prompts
+    print(agent.toolbox)
+
 
 
 if __name__ == "__main__":
-
+    # run()
     run_custom_tool("create a wall with height=855, thickness=60, starting at point (15,76,0) and ending at (65,85,0).\
                      And then change the height to 200, thickness to 80. \
                     After that give me information about the wall. Finally delete the wall")
