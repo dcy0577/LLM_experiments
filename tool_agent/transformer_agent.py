@@ -1,105 +1,194 @@
 import os
 import uuid
-from transformers.tools import OpenAiAgent
-from transformers.tools.agents import PreTool
+import ast
+from typing import Union, List
+from transformers.tools import OpenAiAgent, python_interpreter
+from transformers.tools.agents import PreTool, resolve_tools
+from transformers.tools.python_interpreter import InterpretorError, evaluate_ast
+from astinterp import Interpreter
+
+
 import dotenv
 from transformers import Tool
 import vs
 from ast import literal_eval 
 
-dotenv.load_dotenv(dotenv_path=".env")
+dotenv.load_dotenv(dotenv_path=r"C:\Users\ge25yak\Desktop\LLM_experiments\.env")
 
-# def run():
-#     agent = OpenAiAgent(
-#         model="gpt-3.5-turbo", api_key=os.getenv("OPENAI_API_KEY")
-#     )
-#     result = agent.run("generate an image of a boat in the water")
-#     result.save("img.png")
+output_sum = ''
+def streamer(output):
+    global output_sum
+    output_sum = output_sum + output
 
-# def create_wall(height: str, st_pt: tuple, ed_pt: tuple, thickness: str):
-#     return print(f"wall created with height={height}, start point ={st_pt}, end point = {ed_pt} and thickness = {thickness}!")
+
+def _evaluate_condition(condition, state, tools):
+
+    if hasattr(condition, "opt"):
+        if len(condition.ops) > 1:
+            raise InterpretorError("Cannot evaluate conditions with multiple operators")
+
+        left = evaluate_ast(condition.left, state, tools)
+        comparator = condition.ops[0]
+        right = evaluate_ast(condition.comparators[0], state, tools)
+
+        if isinstance(comparator, ast.Eq):
+            return left == right
+        elif isinstance(comparator, ast.NotEq):
+            return left != right
+        elif isinstance(comparator, ast.Lt):
+            return left < right
+        elif isinstance(comparator, ast.LtE):
+            return left <= right
+        elif isinstance(comparator, ast.Gt):
+            return left > right
+        elif isinstance(comparator, ast.GtE):
+            return left >= right
+        elif isinstance(comparator, ast.Is):
+            return left is right
+        elif isinstance(comparator, ast.IsNot):
+            return left is not right
+        elif isinstance(comparator, ast.In):
+            return left in right
+        elif isinstance(comparator, ast.NotIn):
+            return left not in right
+        else:
+            raise InterpretorError(f"Operator not supported: {comparator}")
+    else:
+        return True
+
 
 
 class CreateWallTool(Tool):
     name = "create_wall"
-    description = ("this tool is use to create a wall in Vetorworks. It takes two inputs: 'st_pt', which should be the start point of the wall, 'ed_pt', which should be the end point of the wall. Both 'st_pt' and 'ed_pt' are 2D coordinates string, such as '(154, 56)' or '(0.5, 546)'")
+    description = ("This tool is use to create a wall in Vetorworks. It takes two inputs: 'st_pt', which should be the start point of the wall, ",
+                   "'ed_pt', which should be the end point of the wall. Both 'st_pt' and 'ed_pt' are 2D coordinates string, such as '(154, 56)' or '(0.5, 546)'. ",
+                   "This tool will return nothing!")
     inputs = ["text", "text"]
-    outputs = ["text"]
+    outputs = []
 
     def __call__(self, st_pt: str, ed_pt: str):
-        id = str(uuid.uuid4())
-        print(f"wall {id} created with, start point ={st_pt}, end point = {ed_pt}!")
-        vs.AlrtDialog(f"wall {id} created with, start point ={st_pt}, end point = {ed_pt}!")
+        print(f"wall created with, start point ={st_pt}, end point = {ed_pt}!")
+        vs.AlrtDialog(f"wall created with, start point ={st_pt}, end point = {ed_pt}!")
         vs.Wall(literal_eval(st_pt), literal_eval(ed_pt))
-        return id
     
 class CreateSphere(Tool):
     name="create_sphere"
-    description = ("this tool is use to create a sphere object in Vetorworks. It takes two inputs: 'center', which should be the center point of the sphere, 'radiusDistance', which should be the radius of sphere. 'center' is 3D coordinates string, such as '(154,56,12)' or '(0.5,546,0)'. 'radiusDistance' should be float value, such as 50. The function returns a handle to the new sphere object.")
+    description = ("this tool is use to create a sphere object in Vetorworks. It takes two inputs: 'center', which should be the center point of the sphere, ",
+                   "'radiusDistance', which should be the radius of sphere. 'center' is 3D coordinates string, such as '(154,56,12)' or '(0.5,546,0)'. ",
+                   "'radiusDistance' should be float value, such as 50. The function returns a handle to the new sphere object.")
     inputs = ["text", "text"]
     outputs = ["text"]
 
-    def __call__(self, center: str, radiusDistance: float):
+    def __call__(self, center: str, radiusDistance: float) -> vs.Handle:
         handle = vs.CreateSphere(literal_eval(center), radiusDistance)
-        vs.AlrtDialog(f"sphere {handle} created with, center ={center}, radiusDistance = {radiusDistance}!")
+        vs.AlrtDialog(f"sphere {str(handle)} created with, center ={center}, radiusDistance = {radiusDistance}!")
         
         return handle
     
-class UpdateWallTool(Tool):
-    name = "update_wall"
-    description = ("This tool is use to update a wall's parameters in Vetorworks. It takes one requierd input which is the wall's unique id, and up to four optional inputs: 'height', which should be the the height of the wall,",
-                   " 'st_pt', which should be the start point of the wall, 'ed_pt', which should be the end point of the wall and 'thickness', which ",
-                   "should be the thickness of the wall. Both 'st_pt' and 'ed_pt' are 3D coordinates string, such as '(154, 56, 54)' or '(0.5, 546, 100.5)'. Both 'height' ",
-                   "and 'thickness' are integer or float value, such as 200 or 200.5. It should be up to the context to decide which optional parameter needs to be updated.")
-    inputs = ["text", "text", "text", "text", "text"]
+class Move(Tool):
+    name = "move_obj"
+    description = ("This tool is use to move an element of a list of elements in Vetorworks. ",
+                   "It takes three requierd input which are the 'xDistance','yDistance','zDistance'. These represent moving distance in x, y, z direction. ",
+                   "It takes one optional input: 'handle', which is the element's unique handle. ",
+                   "The moving distances in each direction should be either integer or float value. The optional 'handle' can be a list or a single value. ")
+    inputs = ["text", "text", "text", "text"]
     outputs = ["text"]
 
-    def __call__(self, id: str, **kwrg):
-        print(f"wall {id} is updated with the information {kwrg}!")
+    def __call__(self, xDistance, yDistance, zDistance, handle: Union[vs.Handle, List[str]] ):
+        if isinstance(handle, vs.Handle):
+            vs.Move3DObj(handle, xDistance, yDistance, zDistance)
+            vs.AlrtDialog(f"element {handle} moved!")
+        elif isinstance(handle, List):
+            for h in handle:
+                vs.Move3DObj(h, xDistance, yDistance, zDistance)
+            vs.AlrtDialog("all selected elements moved!")
+        # elif not handle:
+        #     vs.Move3D(xDistance, yDistance, zDistance)
+        #     vs.AlrtDialog("Handle not given, moves the most recently created 3D object a relative distance from it's original location.")
+        else:
+            vs.AlrtDialog("handle type not supported")
+
     
 class DeleteTool(Tool):
     name = "delete_element"
-    description = ("This tool is use to delete an elemnt in Vectorworks. It takes the element's unique handle as input and then delete the element.")
+    description = ("This tool is use to delete an elemnt or a list of elements in Vectorworks. ",
+                   "It takes the a element's unique handle or a list of handles as input and then delete the elements. ",
+                   "The handle can be a value or a list of strings.")
     inputs = ["text"]
     outputs = ["text"]
 
-    def __call__(self, handle: str):
-        print(f"element {handle} deleted!")
-        vs.DelObject(handle)
-        vs.AlrtDialog(f"element {handle} deleted!")
+    def __call__(self, handle: Union[vs.Handle, List[str]]):
+        if isinstance(handle, vs.Handle):
+            print(f"element {handle} deleted!")
+            vs.DelObject(handle)
+            vs.AlrtDialog(f"element {handle} deleted!")
+        elif isinstance(handle, List):
+            for h in handle:
+                vs.DelObject(h)
+            vs.AlrtDialog(f"elements deleted!")
+        else:
+            vs.AlrtDialog("handle type not supported")
 
-class RetrieveTool(Tool):
-    name = "retrieve_element"
-    description = ("This tool is use to get an elemnt and its information in Vectorworks. It takes the element's unique id as input and then returns the elemets information.")
-    inputs = ["text"]
+class FindSelect(Tool):
+    name = "find_selected_element"
+    description = ("This tool is use to get selected elements or element in Vectorworks. It takes no input, but returns the elemets handles in list. ", 
+                   "If there are no selected elements found, it will return an empty list.")
+    inputs = []
     outputs = ["text"]
 
-    def __call__(self, id: str):
-        # some dummy dimensions
-        height = "..."
-        width = "..."
-        print(f"information of element {id} retrieved! Height: {height}, width: {width}")
+    def __call__(self):
+        selected_obj_list =[]
+        current_layer = vs.ActLayer()
+        if current_layer != None:
+            current_obj = vs.FSObject(current_layer)
+            while current_obj != None:
+                selected_obj_list.append(current_obj)
+                current_obj = vs.NextSObj(current_obj)
+        else:
+            vs.AlrtDialog("No layer exsists!")
+        
+        vs.AlrtDialog(f"selected objs' handles: {str(selected_obj_list)}")
+        return selected_obj_list
 
 
-def run_custom_tool(query: str):
+def run_custom_tool(query: str, agent_interpreter = True):
     # init tools
     create_wall_tool = CreateWallTool()
-    update_wall_tool = UpdateWallTool()
-    retrieve_tool = RetrieveTool()
+    move_tool = Move()
+    get_selected_tool = FindSelect()
     delete_tool = DeleteTool()
     create_sphere_tool = CreateSphere()
 
+    prompt_path = r"C:\Users\ge25yak\Desktop\LLM_experiments\tool_agent\run_prompt_template.txt"
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        prompt_str = f.read()
+
     agent = OpenAiAgent(
         model="gpt-3.5-turbo",
-        # api_key=os.getenv("OPENAI_API_KEY"),
-        api_key="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",
-        additional_tools=[create_wall_tool, update_wall_tool, retrieve_tool, delete_tool, create_sphere_tool]
+        api_key=os.getenv("OPENAI_API_KEY"),
+        run_prompt_template=prompt_str,
+        additional_tools=[create_wall_tool, move_tool, delete_tool, create_sphere_tool, get_selected_tool]
     )
 
+    agent.set_stream(streamer)
     # delete pretools to optimize performance
     del_pretools(agent)
 
-    result = agent.run(query) # return_code=True
+    # modify the interpreter
+    python_interpreter.evaluate_condition = _evaluate_condition
+
+    if agent_interpreter:
+        agent.run(query) # return_code=True
+    
+    # use custom interpreter, not working currently
+    else:
+        code_string = agent.run(query, return_code=True)
+        tools = resolve_tools(code_string, agent.toolbox)
+        tree = ast.parse(code_string)
+        interp = Interpreter('test')
+        interp.visit(tree)
+
+    vs.AlrtDialog(output_sum)
 
 
 def del_pretools(agent):
