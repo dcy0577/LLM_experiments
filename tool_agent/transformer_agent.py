@@ -88,8 +88,8 @@ class CreateSphere(Tool):
 class Move(Tool):
     name = "move_obj"
     description = ("This tool is use to move an element of a list of elements in Vetorworks. ",
-                   "It takes three requierd input which are the 'xDistance','yDistance','zDistance'. These represent moving distance in x, y, z direction. ",
-                   "It takes one optional input: 'handle', which is the element's unique handle. ",
+                   "It takes four requierd input which are the 'xDistance','yDistance','zDistance' and 'handle'. These represent moving distance in x, y, z direction, ",
+                   "as well as the element's unique handle. ",
                    "The moving distances in each direction should be either integer or float value. The optional 'handle' can be a list or a single value. ")
     inputs = ["text", "text", "text", "text"]
     outputs = ["text"]
