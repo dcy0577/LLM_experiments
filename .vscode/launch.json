@@ -1,7 +1,19 @@
 {
-
     "version": "0.2.0",
     "configurations": [        
+        {
+            "name": "chainlit",
+            "type": "python",
+            "module": "chainlit",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false,
+            "args": [
+                "run",
+                "tool_agent//langchain_openai_agent.py",
+           ]
+
+        },
         {
             "name": "Python: Remote Attach",
             "type": "python",
